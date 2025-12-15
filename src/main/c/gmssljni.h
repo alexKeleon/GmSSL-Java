@@ -927,6 +927,54 @@ JNIEXPORT jlong JNICALL Java_org_gmssl_GmSSLJNI_cert_1get_1subject_1public_1key
 JNIEXPORT jint JNICALL Java_org_gmssl_GmSSLJNI_cert_1verify_1by_1ca_1cert
   (JNIEnv *, jclass, jbyteArray, jbyteArray, jstring);
 
+/*
+ * Class:     org_gmssl_GmSSLJNI
+ * Method:    x509_req_new
+ * Signature: (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JLjava/lang/String;)[B
+ */
+JNIEXPORT jbyteArray JNICALL Java_org_gmssl_GmSSLJNI_x509_1req_1new
+  (JNIEnv *, jclass, jstring, jstring, jstring, jstring, jstring, jstring, jlong, jstring);
+
+/*
+ * Class:     org_gmssl_GmSSLJNI
+ * Method:    x509_req_to_pem
+ * Signature: ([BLjava/lang/String;)I
+ */
+JNIEXPORT jint JNICALL Java_org_gmssl_GmSSLJNI_x509_1req_1to_1pem
+  (JNIEnv *, jclass, jbyteArray, jstring);
+
+/*
+ * Class:     org_gmssl_GmSSLJNI
+ * Method:    x509_req_from_pem
+ * Signature: (Ljava/lang/String;)[B
+ */
+JNIEXPORT jbyteArray JNICALL Java_org_gmssl_GmSSLJNI_x509_1req_1from_1pem
+  (JNIEnv *, jclass, jstring);
+
+/*
+ * Class:     org_gmssl_GmSSLJNI
+ * Method:    x509_req_get_subject
+ * Signature: ([B)[Ljava/lang/String;
+ */
+JNIEXPORT jobjectArray JNICALL Java_org_gmssl_GmSSLJNI_x509_1req_1get_1subject
+  (JNIEnv *, jclass, jbyteArray);
+
+/*
+ * Class:     org_gmssl_GmSSLJNI
+ * Method:    x509_req_get_subject_public_key
+ * Signature: ([B)J
+ */
+JNIEXPORT jlong JNICALL Java_org_gmssl_GmSSLJNI_x509_1req_1get_1subject_1public_1key
+  (JNIEnv *, jclass, jbyteArray);
+
+/*
+ * Class:     org_gmssl_GmSSLJNI
+ * Method:    x509_req_verify
+ * Signature: ([BLjava/lang/String;)I
+ */
+JNIEXPORT jint JNICALL Java_org_gmssl_GmSSLJNI_x509_1req_1verify
+  (JNIEnv *, jclass, jbyteArray, jstring);
+
 #ifdef __cplusplus
 }
 #endif

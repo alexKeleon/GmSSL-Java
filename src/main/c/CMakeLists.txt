@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.11)
+
 project(gmssljni)
 
 find_program(GMSSL_EXECUTABLE NAMES gmssl)
@@ -21,6 +22,7 @@ if(WIN32)
     set_target_properties(gmssljni-native PROPERTIES OUTPUT_NAME lib$ENV{libName})
 elseif(APPLE)
     message(STATUS "->Now is Apple systems.")
+    message(STATUS "CMAKE_OSX_ARCHITECTURES is set to: ${CMAKE_OSX_ARCHITECTURES}")
     set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/$ENV{libSubFolder})
     add_library(gmssljni-native SHARED gmssljni.c)
     target_link_libraries(gmssljni-native -L"${GMSSL_PARENT_DIR}/lib")

@@ -20,6 +20,7 @@
 #include <gmssl/rand.h>
 #include <gmssl/aead.h>
 #include <gmssl/x509.h>
+#include <gmssl/x509_req.h>
 #include <gmssl/error.h>
 #include <gmssl/pbkdf2.h>
 #include <gmssl/version.h>
@@ -3877,6 +3878,374 @@ end:
 	(*env)->ReleaseByteArrayElements(env, cert, certbuf, JNI_ABORT);
 	if (cacertbuf) (*env)->ReleaseByteArrayElements(env, cacert, cacertbuf, JNI_ABORT);
 	if (id_str) (*env)->ReleaseStringUTFChars(env, ca_sm2_id, id_str);
+	return ret;
+}
+
+/*
+ * Class:     org_gmssl_GmSSLJNI
+ * Method:    x509_req_new
+ * Signature: (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JLjava/lang/String;)[B
+ */
+JNIEXPORT jbyteArray JNICALL Java_org_gmssl_GmSSLJNI_x509_1req_1new(
+	JNIEnv *env, jclass this,
+	jstring country, jstring state, jstring locality,
+	jstring org, jstring org_unit, jstring common_name,
+	jlong sm2_key, jstring signer_id)
+{
+	jbyteArray ret = NULL;
+	const char *country_str = NULL;
+	const char *state_str = NULL;
+	const char *locality_str = NULL;
+	const char *org_str = NULL;
+	const char *org_unit_str = NULL;
+	const char *common_name_str = NULL;
+	const char *signer_id_str = NULL;
+	size_t signer_id_len = 0;
+
+	uint8_t name[256];
+	size_t namelen = 0;
+	uint8_t attrs[512];
+	size_t attrs_len = 0;
+	uint8_t req[1024];
+	uint8_t *p = req;
+	size_t reqlen = 0;
+
+	if (!sm2_key) {
+		error_print();
+		return NULL;
+	}
+	if (!common_name) {
+		error_print();
+		return NULL;
+	}
+
+	// Get string values (some can be NULL)
+	if (country) {
+		if (!(country_str = (*env)->GetStringUTFChars(env, country, NULL))) {
+			error_print();
+			goto end;
+		}
+	}
+	if (state) {
+		if (!(state_str = (*env)->GetStringUTFChars(env, state, NULL))) {
+			error_print();
+			goto end;
+		}
+	}
+	if (locality) {
+		if (!(locality_str = (*env)->GetStringUTFChars(env, locality, NULL))) {
+			error_print();
+			goto end;
+		}
+	}
+	if (org) {
+		if (!(org_str = (*env)->GetStringUTFChars(env, org, NULL))) {
+			error_print();
+			goto end;
+		}
+	}
+	if (org_unit) {
+		if (!(org_unit_str = (*env)->GetStringUTFChars(env, org_unit, NULL))) {
+			error_print();
+			goto end;
+		}
+	}
+	if (!(common_name_str = (*env)->GetStringUTFChars(env, common_name, NULL))) {
+		error_print();
+		goto end;
+	}
+
+	// Get signer_id, use default if not provided
+	if (signer_id) {
+		if (!(signer_id_str = (*env)->GetStringUTFChars(env, signer_id, NULL))) {
+			error_print();
+			goto end;
+		}
+		signer_id_len = strlen(signer_id_str);
+	} else {
+		signer_id_str = SM2_DEFAULT_ID;
+		signer_id_len = strlen(SM2_DEFAULT_ID);
+	}
+
+	// Build subject name
+	if (x509_name_set(name, &namelen, sizeof(name),
+		country_str, state_str, locality_str,
+		org_str, org_unit_str, common_name_str) != 1) {
+		error_print();
+		goto end;
+	}
+
+	// Generate and sign the certificate request
+	if (x509_req_sign_to_der(
+		X509_version_v1,
+		name, namelen,
+		(SM2_KEY *)sm2_key,
+		attrs, attrs_len,
+		OID_sm2sign_with_sm3,
+		(SM2_KEY *)sm2_key, signer_id_str, signer_id_len,
+		&p, &reqlen) != 1) {
+		error_print();
+		goto end;
+	}
+
+	// Create return byte array
+	if (!(ret = (*env)->NewByteArray(env, reqlen))) {
+		error_print();
+		goto end;
+	}
+	(*env)->SetByteArrayRegion(env, ret, 0, reqlen, (jbyte *)req);
+
+end:
+	if (country_str && country) (*env)->ReleaseStringUTFChars(env, country, country_str);
+	if (state_str && state) (*env)->ReleaseStringUTFChars(env, state, state_str);
+	if (locality_str && locality) (*env)->ReleaseStringUTFChars(env, locality, locality_str);
+	if (org_str && org) (*env)->ReleaseStringUTFChars(env, org, org_str);
+	if (org_unit_str && org_unit) (*env)->ReleaseStringUTFChars(env, org_unit, org_unit_str);
+	if (common_name_str) (*env)->ReleaseStringUTFChars(env, common_name, common_name_str);
+	if (signer_id_str && signer_id) (*env)->ReleaseStringUTFChars(env, signer_id, signer_id_str);
+	return ret;
+}
+
+/*
+ * Class:     org_gmssl_GmSSLJNI
+ * Method:    x509_req_to_pem
+ * Signature: ([BLjava/lang/String;)I
+ */
+JNIEXPORT jint JNICALL Java_org_gmssl_GmSSLJNI_x509_1req_1to_1pem(
+	JNIEnv *env, jclass this,
+	jbyteArray req, jstring file)
+{
+	jint ret = -1;
+	jbyte *reqbuf = NULL;
+	jsize reqlen;
+	const char *file_str = NULL;
+	FILE *fp = NULL;
+
+	if (!req || !file) {
+		error_print();
+		return -1;
+	}
+
+	if (!(reqbuf = (*env)->GetByteArrayElements(env, req, NULL))) {
+		error_print();
+		return -1;
+	}
+	reqlen = (*env)->GetArrayLength(env, req);
+
+	if (!(file_str = (*env)->GetStringUTFChars(env, file, NULL))) {
+		error_print();
+		goto end;
+	}
+	if (!(fp = fopen(file_str, "wb"))) {
+		error_print();
+		goto end;
+	}
+	if (x509_req_to_pem((uint8_t *)reqbuf, (size_t)reqlen, fp) != 1) {
+		error_print();
+		goto end;
+	}
+	ret = 1;
+end:
+	(*env)->ReleaseByteArrayElements(env, req, reqbuf, JNI_ABORT);
+	if (file_str) (*env)->ReleaseStringUTFChars(env, file, file_str);
+	if (fp) fclose(fp);
+	return ret;
+}
+
+/*
+ * Class:     org_gmssl_GmSSLJNI
+ * Method:    x509_req_from_pem
+ * Signature: (Ljava/lang/String;)[B
+ */
+JNIEXPORT jbyteArray JNICALL Java_org_gmssl_GmSSLJNI_x509_1req_1from_1pem(
+	JNIEnv *env, jclass this,
+	jstring file)
+{
+	jbyteArray ret = NULL;
+	const char *file_str = NULL;
+	FILE *fp = NULL;
+	uint8_t req[1024];
+	size_t reqlen;
+
+	if (!file) {
+		error_print();
+		return NULL;
+	}
+
+	if (!(file_str = (*env)->GetStringUTFChars(env, file, NULL))) {
+		error_print();
+		return NULL;
+	}
+	if (!(fp = fopen(file_str, "rb"))) {
+		error_print();
+		goto end;
+	}
+	if (x509_req_from_pem(req, &reqlen, sizeof(req), fp) != 1) {
+		error_print();
+		goto end;
+	}
+
+	if (!(ret = (*env)->NewByteArray(env, reqlen))) {
+		error_print();
+		goto end;
+	}
+	(*env)->SetByteArrayRegion(env, ret, 0, reqlen, (jbyte *)req);
+
+end:
+	if (file_str) (*env)->ReleaseStringUTFChars(env, file, file_str);
+	if (fp) fclose(fp);
+	return ret;
+}
+
+/*
+ * Class:     org_gmssl_GmSSLJNI
+ * Method:    x509_req_get_subject
+ * Signature: ([B)[Ljava/lang/String;
+ */
+JNIEXPORT jobjectArray JNICALL Java_org_gmssl_GmSSLJNI_x509_1req_1get_1subject(
+	JNIEnv *env, jclass this,
+	jbyteArray req)
+{
+	jobjectArray ret = NULL;
+	jobjectArray arr = NULL;
+	jbyte *reqbuf = NULL;
+	jsize reqlen;
+	const uint8_t *subject;
+	size_t subject_len;
+	int cnt;
+
+	if (!req) {
+		error_print();
+		return NULL;
+	}
+
+	if (!(reqbuf = (*env)->GetByteArrayElements(env, req, NULL))) {
+		error_print();
+		return NULL;
+	}
+	reqlen = (*env)->GetArrayLength(env, req);
+
+	if (x509_req_get_details((uint8_t *)reqbuf, reqlen,
+		NULL, &subject, &subject_len, NULL, NULL, NULL, NULL, NULL, NULL) != 1) {
+		error_print();
+		goto end;
+	}
+
+	if (gmssl_name_cnt(subject, subject_len, &cnt) != 1) {
+		error_print();
+		goto end;
+	}
+	if (!(arr = (*env)->NewObjectArray(env, cnt, (*env)->FindClass(env, "java/lang/String"), 0))) {
+		error_print();
+		goto end;
+	}
+	if (gmssl_parse_name(env, arr, subject, subject_len) != 1) {
+		error_print();
+	}
+	ret = arr;
+	arr = NULL;
+
+end:
+	if (reqbuf) (*env)->ReleaseByteArrayElements(env, req, reqbuf, JNI_ABORT);
+	return ret;
+}
+
+/*
+ * Class:     org_gmssl_GmSSLJNI
+ * Method:    x509_req_get_subject_public_key
+ * Signature: ([B)J
+ */
+JNIEXPORT jlong JNICALL Java_org_gmssl_GmSSLJNI_x509_1req_1get_1subject_1public_1key(
+	JNIEnv *env, jclass this,
+	jbyteArray req)
+{
+	jlong ret = 0;
+	jbyte *reqbuf = NULL;
+	jsize reqlen;
+	SM2_KEY *sm2_pub = NULL;
+
+	if (!req) {
+		error_print();
+		return 0;
+	}
+
+	if (!(reqbuf = (*env)->GetByteArrayElements(env, req, NULL))) {
+		error_print();
+		return 0;
+	}
+	reqlen = (*env)->GetArrayLength(env, req);
+
+	if (!(sm2_pub = (SM2_KEY *)malloc(sizeof(SM2_KEY)))) {
+		error_print();
+		goto end;
+	}
+	memset(sm2_pub, 0, sizeof(SM2_KEY));
+
+	if (x509_req_get_details((uint8_t *)reqbuf, reqlen,
+		NULL, NULL, NULL, sm2_pub, NULL, NULL, NULL, NULL, NULL) != 1) {
+		error_print();
+		goto end;
+	}
+
+	ret = (jlong)sm2_pub;
+	sm2_pub = NULL;
+
+end:
+	(*env)->ReleaseByteArrayElements(env, req, reqbuf, JNI_ABORT);
+	if (sm2_pub) {
+		gmssl_secure_clear(sm2_pub, sizeof(SM2_KEY));
+		free(sm2_pub);
+	}
+	return ret;
+}
+
+/*
+ * Class:     org_gmssl_GmSSLJNI
+ * Method:    x509_req_verify
+ * Signature: ([BLjava/lang/String;)I
+ */
+JNIEXPORT jint JNICALL Java_org_gmssl_GmSSLJNI_x509_1req_1verify(
+	JNIEnv *env, jclass this,
+	jbyteArray req, jstring signer_id)
+{
+	jint ret = -1;
+	jbyte *reqbuf = NULL;
+	jsize reqlen;
+	const char *signer_id_str = NULL;
+	size_t signer_id_len = 0;
+
+	if (!req) {
+		error_print();
+		return -1;
+	}
+
+	if (!(reqbuf = (*env)->GetByteArrayElements(env, req, NULL))) {
+		error_print();
+		return -1;
+	}
+	reqlen = (*env)->GetArrayLength(env, req);
+
+	if (signer_id) {
+		if (!(signer_id_str = (*env)->GetStringUTFChars(env, signer_id, NULL))) {
+			error_print();
+			goto end;
+		}
+		signer_id_len = strlen(signer_id_str);
+	} else {
+		signer_id_str = SM2_DEFAULT_ID;
+		signer_id_len = strlen(SM2_DEFAULT_ID);
+	}
+
+	if (x509_req_verify((uint8_t *)reqbuf, reqlen, signer_id_str, signer_id_len) != 1) {
+		error_print();
+		ret = 0;
+		goto end;
+	}
+	ret = 1;
+
+end:
+	(*env)->ReleaseByteArrayElements(env, req, reqbuf, JNI_ABORT);
+	if (signer_id_str && signer_id) (*env)->ReleaseStringUTFChars(env, signer_id, signer_id_str);
 	return ret;
 }
 

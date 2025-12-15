@@ -149,6 +149,17 @@ public class GmSSLJNI {
 	public final static native long cert_get_subject_public_key(byte[] cert);
 	public final static native int cert_verify_by_ca_cert(byte[] cert, byte[] cacert, String ca_sm2_id);
 
+	// Certificate Request (CSR) functions
+	public final static native byte[] x509_req_new(
+		String country, String state, String locality,
+		String org, String orgUnit, String commonName,
+		long sm2Key, String signerId);
+	public final static native int x509_req_to_pem(byte[] req, String file);
+	public final static native byte[] x509_req_from_pem(String file);
+	public final static native String[] x509_req_get_subject(byte[] req);
+	public final static native long x509_req_get_subject_public_key(byte[] req);
+	public final static native int x509_req_verify(byte[] req, String signerId);
+
 	public static void print_bytes(String label, byte[] data) {
 		int i;
 		System.out.printf("%s: ", label);
